@@ -54,15 +54,9 @@ class GbpCleanUp(object):
             data = '{"auth": {"tenantName": "%s", '\
                    '"passwordCredentials":{"username": "%s", "password":'\
                    '"%s"}}}' % (self.tenant_name, self.username, self.password)
-
-            resp = self.session.post(url,
-                                     data=data,
-                                     headers=headers, timeout=TIMEOUT)
-            if resp.status_code == requests.codes.ok:
-                token = json.loads(resp.text)["access"]["token"]["id"]
-                return token
-            if resp.status_code == UN_AUTH:
-                exit()
+            response = Client(url, 'POST', headers, data).get_response()
+            token = response["access"]["token"]["id"]
+            return token
         except exceptions.Exception as e:
             print e
             exit()
@@ -70,10 +64,7 @@ class GbpCleanUp(object):
     def _get_tenant_id(self):
         try:
             url = Url('tenants')
-            resp = self.session.get(url,
-                                    headers=self.token_header,
-                                    timeout=TIMEOUT)
-            resp_body = json.loads(resp.text)
+            resp_body = Client(url, 'GET', self.token_header).get_response()
             tenants = resp_body['tenants']
             for tenant in tenants:
                 if tenant['name'] == self.tenant_name:
@@ -91,14 +82,14 @@ class GbpCleanUp(object):
                 component.delete()
 
 
-class GbpComponent():
+class GbpComponent(GbpCleanUp):
     def __init__(self, component_type=None, component_id=None):
         self.component_type = component_type
         self.component_id = component_id
 
     def delete(self):
         delete_url = Url(self.component_type, self.component_id)
-        Client(delete_url, 'DELETE').get_response()
+        Client(delete_url, 'DELETE', self.token_header).get_response()
 
     def show(self):
         pass
@@ -108,23 +99,31 @@ class GbpComponent():
 
 
 class Client(GbpCleanUp):
-    def __init__(self, url=None, http_method=None, data=None):
+    def __init__(self, url=None, http_method=None, headers=None, data=None):
         self.url = url
         self.data = data
         self.http_method = http_method
+        self.headers = headers
 
     def get_response(self):
         try:
             if self.http_method == 'GET':
                 resp = self.session.get(self.url,
-                                        headers=self.token_header,
+                                        headers=self.headers,
                                         timeout=TIMEOUT)
                 return json.loads(resp.text)
             if self.http_method == 'DELETE':
                 resp = self.session.delete(self.url,
-                                           headers=self.token_header,
+                                           headers=self.headers,
                                            timeout=TIMEOUT)
+            if self.http_method == 'POST':
+                resp = self.session.post(self.url,
+                                         headers=self.headers,
+                                         data=self.data,
+                                         timeout=TIMEOUT)
+                return json.loads(resp.text)
             if resp.status_code == UN_AUTH:
+                print 'Requires Authorization'
                 exit()
 
         except exceptions.Exception as e:
@@ -132,13 +131,13 @@ class Client(GbpCleanUp):
             exit()
 
 
-class ListComponents():
+class ListComponents(GbpCleanUp):
     def __init__(self, component_type=None):
         self.component_type = component_type
 
     def list_components(self):
         url = Url(self.component_type)
-        response_body = Client(url, 'GET').get_response()
+        response_body = Client(url, 'GET', self.token_header).get_response()
 
         components_list = []
         for component in response_body[self.component_type]:
@@ -183,12 +182,13 @@ class Url(GbpCleanUp):
             return url_str + ".json"
 
 
-GbpCleanUp('10.101.1.40',
-           'admin',
-           'noir0123',
-           'admin').clean('servers',
-                          'policy_target_groups',
-                          'policy_rule_sets',
-                          'policy_rules',
-                          'policy_classifiers',
-                          'policy_actions')
+if __name__ == '__main__':
+    GbpCleanUp('10.101.1.40',
+               'admin',
+               'noir0123',
+               'admin').clean('servers',
+                              'policy_target_groups',
+                              'policy_rule_sets',
+                              'policy_rules',
+                              'policy_classifiers',
+                              'policy_actions')
